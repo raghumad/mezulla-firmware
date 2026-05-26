@@ -74,6 +74,9 @@ ProcessMessage MezullaOwnershipModule::handleReceived(const meshtastic_MeshPacke
     case MEZULLA_CMD_QUERY:
         handleQuery(mp);
         return ProcessMessage::STOP;
+    case MEZULLA_CMD_RELEASE:
+        handleRelease(mp);
+        return ProcessMessage::STOP;
     default:
         return ProcessMessage::CONTINUE;
     }
@@ -118,6 +121,27 @@ void MezullaOwnershipModule::handleClaim(const meshtastic_MeshPacket &mp)
 
     nodeDB->saveToDisk(SEGMENT_DEVICESTATE);
     LOG_INFO("[MEZULLA] claim: accepted, owner=%s", devicestate.mezulla_owner_id);
+    lastReplyStatus = MEZULLA_STATUS_OK;
+}
+
+void MezullaOwnershipModule::handleRelease(const meshtastic_MeshPacket &mp)
+{
+    if (!isClaimed()) {
+        lastReplyStatus = MEZULLA_STATUS_OK;
+        return;
+    }
+
+    // Payload: [cmd:1][owner_id:rest] — sender must prove they're the owner
+    const char *senderId = (const char *)&mp.decoded.payload.bytes[1];
+    size_t senderIdLen = mp.decoded.payload.size - 1;
+
+    if (senderIdLen == 0 || strncmp(senderId, devicestate.mezulla_owner_id, senderIdLen) != 0) {
+        LOG_WARN("[MEZULLA] release: rejected, reason=not_owner");
+        lastReplyStatus = MEZULLA_STATUS_NOT_OWNER;
+        return;
+    }
+
+    clearOwnership();
     lastReplyStatus = MEZULLA_STATUS_OK;
 }
 

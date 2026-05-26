@@ -6,6 +6,7 @@
 enum MezullaCommand : uint8_t {
     MEZULLA_CMD_CLAIM = 0x01,
     MEZULLA_CMD_QUERY = 0x02,
+    MEZULLA_CMD_RELEASE = 0x03,
 };
 
 // Response status codes (first byte of reply payload).
@@ -13,6 +14,7 @@ enum MezullaStatus : uint8_t {
     MEZULLA_STATUS_OK = 0x00,
     MEZULLA_STATUS_TOKEN_MISMATCH = 0x01,
     MEZULLA_STATUS_ALREADY_CLAIMED = 0x02,
+    MEZULLA_STATUS_NOT_OWNER = 0x03,
 };
 
 class MezullaOwnershipModule : public SinglePortModule
@@ -34,6 +36,7 @@ class MezullaOwnershipModule : public SinglePortModule
   private:
     void handleClaim(const meshtastic_MeshPacket &mp);
     void handleQuery(const meshtastic_MeshPacket &mp);
+    void handleRelease(const meshtastic_MeshPacket &mp);
 
     MezullaStatus lastReplyStatus = MEZULLA_STATUS_OK;
 };
