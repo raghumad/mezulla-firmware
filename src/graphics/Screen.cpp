@@ -21,6 +21,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 #include "Screen.h"
+#include "modules/MezullaOwnershipModule.h"
+#include "modules/MezullaQrScreen.h"
 #include "NodeDB.h"
 #include "PowerMon.h"
 #include "Throttle.h"
@@ -1147,6 +1149,11 @@ void Screen::setFrames(FrameFocus focus)
         normalFrames[numframes++] = NotificationRenderer::drawCriticalFaultFrame;
         indicatorIcons.push_back(icon_error);
         focus = FOCUS_FAULT; // Change our "focus" parameter, to ensure we show the fault frame
+    }
+
+    // Mezulla: show QR pairing screen when board is unclaimed
+    if (mezullaOwnershipModule && !mezullaOwnershipModule->isClaimed()) {
+        normalFrames[numframes++] = MezullaQrScreen::drawPairingQrFrame;
     }
 
 #if defined(DISPLAY_CLOCK_FRAME)
