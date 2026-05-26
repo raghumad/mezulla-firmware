@@ -1151,9 +1151,16 @@ void Screen::setFrames(FrameFocus focus)
         focus = FOCUS_FAULT; // Change our "focus" parameter, to ensure we show the fault frame
     }
 
-    // Mezulla: show QR pairing screen when board is unclaimed
+    // Mezulla: when unclaimed, show ONLY the QR pairing screen.
+    // No other frames, no auto-transition, no indicator dots.
     if (mezullaOwnershipModule && !mezullaOwnershipModule->isClaimed()) {
-        normalFrames[numframes++] = MezullaQrScreen::drawPairingQrFrame;
+        normalFrames[0] = MezullaQrScreen::drawPairingQrFrame;
+        ui->setFrames(normalFrames, 1);
+        ui->disableAutoTransition();
+        ui->disableAllIndicators();
+        LOG_INFO("[MEZULLA] QR-only mode (unclaimed)");
+        framesetInfo.frameCount = 1;
+        return;
     }
 
 #if defined(DISPLAY_CLOCK_FRAME)

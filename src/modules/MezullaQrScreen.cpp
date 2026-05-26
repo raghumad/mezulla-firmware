@@ -6,7 +6,8 @@
 #include <cstdio>
 
 // QR Version 3: 29×29 modules. At 2px/module = 58×58 pixels.
-// Fits on 128×64 SSD1306 with room for a label below.
+// Full-screen takeover: ignore the UI framework's x,y offset and
+// draw at absolute coordinates so the overlays don't crop us.
 #define QR_VERSION 3
 #define QR_MODULE_PX 2
 #define QR_MODULES (4 * QR_VERSION + 17)  // 29
@@ -50,24 +51,27 @@ void MezullaQrScreen::drawPairingQrFrame(OLEDDisplay *display, OLEDDisplayUiStat
     if (!qrGenerated)
         return;
 
+    // Full-screen takeover: ignore x,y from the UI framework and
+    // draw at absolute coordinates. This avoids the top overlay bar
+    // and bottom indicator dots cropping the QR code.
     display->setColor(BLACK);
     display->fillRect(0, 0, 128, 64);
 
-    // Center the QR code horizontally, leave 6px at bottom for label
-    int16_t qrX = x + (128 - QR_SIZE_PX) / 2;
-    int16_t qrY = y + 0;
+    // Center QR horizontally, vertically within 64px leaving 6px at bottom for label
+    int16_t qrX = (128 - QR_SIZE_PX) / 2;  // 35
+    int16_t qrY = 0;
 
-    // Draw white quiet zone background (2px border around QR)
+    // White quiet zone (1px border — tight to fit label)
     display->setColor(WHITE);
-    display->fillRect(qrX - 2, qrY - 2, QR_SIZE_PX + 4, QR_SIZE_PX + 4);
+    display->fillRect(qrX - 1, qrY, QR_SIZE_PX + 2, QR_SIZE_PX + 2);
 
-    // Draw QR modules
+    // QR modules
     display->setColor(BLACK);
     for (uint8_t my = 0; my < QR_MODULES; my++) {
         for (uint8_t mx = 0; mx < QR_MODULES; mx++) {
             if (qrcode_getModule(&qrcode, mx, my)) {
                 display->fillRect(qrX + mx * QR_MODULE_PX,
-                                  qrY + my * QR_MODULE_PX,
+                                  qrY + 1 + my * QR_MODULE_PX,
                                   QR_MODULE_PX, QR_MODULE_PX);
             }
         }
@@ -77,5 +81,5 @@ void MezullaQrScreen::drawPairingQrFrame(OLEDDisplay *display, OLEDDisplayUiStat
     display->setColor(WHITE);
     display->setTextAlignment(TEXT_ALIGN_CENTER);
     display->setFont(ArialMT_Plain_10);
-    display->drawString(x + 64, y + QR_SIZE_PX + 1, "Scan to pair");
+    display->drawString(64, QR_SIZE_PX + 2, "Scan to pair");
 }
