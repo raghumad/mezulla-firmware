@@ -13,7 +13,9 @@ MezullaOwnershipModule *mezullaOwnershipModule;
 MezullaOwnershipModule::MezullaOwnershipModule()
     : SinglePortModule("mezulla", meshtastic_PortNum_PRIVATE_APP)
 {
-    if (devicestate.mezulla_pairing_token[0] == '\0' && !isClaimed()) {
+    // Always regenerate token on boot if unclaimed — ensures the token
+    // length matches the current firmware's expected size (8 hex chars).
+    if (!isClaimed()) {
         generatePairingToken();
     }
 }
@@ -35,15 +37,15 @@ const char *MezullaOwnershipModule::getPairingToken() const
 
 void MezullaOwnershipModule::generatePairingToken()
 {
-    uint8_t raw[16];
+    uint8_t raw[4];
 #if defined(ARCH_ESP32)
     esp_fill_random(raw, sizeof(raw));
 #else
-    for (int i = 0; i < 16; i++)
+    for (int i = 0; i < 4; i++)
         raw[i] = (uint8_t)random(256);
 #endif
 
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 4; i++) {
         snprintf(devicestate.mezulla_pairing_token + i * 2, 3, "%02x", raw[i]);
     }
 

@@ -2,21 +2,21 @@
 #include "MezullaOwnershipModule.h"
 #include "NodeDB.h"
 #include "configuration.h"
-#include "qrcode.h"
+#include "qrcodegen.h"
 #include <cstdio>
+#include <cstring>
 
-// QR Version 3: 29×29 modules. At 2px/module = 58×58 pixels.
-// Full-screen takeover: ignore the UI framework's x,y offset and
-// draw at absolute coordinates so the overlays don't crop us.
-#define QR_VERSION 3
+// QR Version 2: 25×25 modules. At 2px/module with 3-module quiet zone:
+// (25 + 6) × 2 = 62×62 pixels. Fits 128×64 SSD1306.
+#define QR_VERSION_MIN 2
+#define QR_VERSION_MAX 2
 #define QR_MODULE_PX 2
-#define QR_MODULES (4 * QR_VERSION + 17)  // 29
-#define QR_SIZE_PX (QR_MODULES * QR_MODULE_PX)  // 58
+#define QR_QUIET_ZONE 3
 
-static QRCode qrcode;
-// QR V3 = 29×29 modules = 841 bits = 106 bytes. Round up to 128.
-static uint8_t qrcodeData[128];
+static uint8_t qrcode[qrcodegen_BUFFER_LEN_FOR_VERSION(QR_VERSION_MAX)];
+static uint8_t tempBuf[qrcodegen_BUFFER_LEN_FOR_VERSION(QR_VERSION_MAX)];
 static bool qrGenerated = false;
+static int qrSize = 0;
 static char lastToken[33] = {};
 
 static void ensureQrGenerated()
@@ -33,14 +33,23 @@ static void ensureQrGenerated()
 
     char url[80];
     snprintf(url, sizeof(url), "tern://p?n=%s&t=%s",
-             owner.id + 1, // skip the '!' prefix on the node hex id
+             owner.id + 1,
              token);
 
-    qrcode_initText(&qrcode, qrcodeData, QR_VERSION, ECC_LOW, url);
+    bool ok = qrcodegen_encodeText(url, tempBuf, qrcode,
+        qrcodegen_Ecc_LOW, QR_VERSION_MIN, QR_VERSION_MAX,
+        qrcodegen_Mask_AUTO, true);
+
+    if (!ok) {
+        LOG_ERROR("[MEZULLA] qr: encode failed for url=%s", url);
+        return;
+    }
+
+    qrSize = qrcodegen_getSize(qrcode);
     strncpy(lastToken, token, sizeof(lastToken) - 1);
     qrGenerated = true;
 
-    LOG_INFO("[MEZULLA] qr: displayed, token=%s", token);
+    LOG_INFO("[MEZULLA] qr: displayed, token=%s size=%d", token, qrSize);
 }
 
 void MezullaQrScreen::drawPairingQrFrame(OLEDDisplay *display, OLEDDisplayUiState *state,
@@ -51,35 +60,28 @@ void MezullaQrScreen::drawPairingQrFrame(OLEDDisplay *display, OLEDDisplayUiStat
     if (!qrGenerated)
         return;
 
-    // Full-screen takeover: ignore x,y from the UI framework and
-    // draw at absolute coordinates. This avoids the top overlay bar
-    // and bottom indicator dots cropping the QR code.
+    int totalPx = (qrSize + 2 * QR_QUIET_ZONE) * QR_MODULE_PX;
+
     display->setColor(BLACK);
     display->fillRect(0, 0, 128, 64);
 
-    // Center QR horizontally, vertically within 64px leaving 6px at bottom for label
-    int16_t qrX = (128 - QR_SIZE_PX) / 2;  // 35
-    int16_t qrY = 0;
+    int16_t originX = (128 - totalPx) / 2;
+    int16_t originY = (64 - totalPx) / 2;
 
-    // White quiet zone (1px border — tight to fit label)
+    // White background for QR + quiet zone
     display->setColor(WHITE);
-    display->fillRect(qrX - 1, qrY, QR_SIZE_PX + 2, QR_SIZE_PX + 2);
+    display->fillRect(originX, originY, totalPx, totalPx);
 
-    // QR modules
+    // Black modules
     display->setColor(BLACK);
-    for (uint8_t my = 0; my < QR_MODULES; my++) {
-        for (uint8_t mx = 0; mx < QR_MODULES; mx++) {
-            if (qrcode_getModule(&qrcode, mx, my)) {
-                display->fillRect(qrX + mx * QR_MODULE_PX,
-                                  qrY + 1 + my * QR_MODULE_PX,
-                                  QR_MODULE_PX, QR_MODULE_PX);
+    for (int my = 0; my < qrSize; my++) {
+        for (int mx = 0; mx < qrSize; mx++) {
+            if (qrcodegen_getModule(qrcode, mx, my)) {
+                display->fillRect(
+                    originX + (QR_QUIET_ZONE + mx) * QR_MODULE_PX,
+                    originY + (QR_QUIET_ZONE + my) * QR_MODULE_PX,
+                    QR_MODULE_PX, QR_MODULE_PX);
             }
         }
     }
-
-    // Label below QR
-    display->setColor(WHITE);
-    display->setTextAlignment(TEXT_ALIGN_CENTER);
-    display->setFont(ArialMT_Plain_10);
-    display->drawString(64, QR_SIZE_PX + 2, "Scan to pair");
 }
