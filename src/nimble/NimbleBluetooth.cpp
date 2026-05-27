@@ -400,10 +400,8 @@ class NimbleBluetoothToRadioCallback : public BLECharacteristicCallbacks
 {
     void onWrite(BLECharacteristic *pCharacteristic) override
     {
-        // CAUTION: This callback runs in the NimBLE task!!! Don't do anything except communicate with the main task's runOnce.
-        // Assumption: onWrite is serialized by NimBLE, so we don't need to lock here against multiple concurrent onWrite calls.
-
         int currentWriteCount = bluetoothPhoneAPI->writeCount.fetch_add(1);
+        LOG_INFO("BLE onWrite(%d): len=%d", currentWriteCount, pCharacteristic->getLength());
 
 #ifdef DEBUG_NIMBLE_ON_WRITE_TIMING
         int startMillis = millis();

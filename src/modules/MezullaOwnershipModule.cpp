@@ -1,5 +1,4 @@
 #include "MezullaOwnershipModule.h"
-#include "Default.h"
 #include "MeshService.h"
 #include "NodeDB.h"
 #include "configuration.h"
@@ -16,11 +15,10 @@ MezullaOwnershipModule::MezullaOwnershipModule()
 {
     if (!isClaimed()) {
         generatePairingToken();
-        // Keep BLE advertising indefinitely while showing the QR.
-        // The pilot sees QR → expects to scan → BLE must be available.
-        // Restore the configured timeout after claiming.
-        config.power.wait_bluetooth_secs = 0;
-        LOG_INFO("[MEZULLA] ownership: unclaimed, BLE timeout disabled");
+        // QR token is the authentication — BLE PIN on top is redundant
+        // and causes silent write drops before bonding completes.
+        config.bluetooth.mode = meshtastic_Config_BluetoothConfig_PairingMode_NO_PIN;
+        LOG_INFO("[MEZULLA] ownership: unclaimed, BLE set to NO_PIN (QR token is auth)");
     }
 }
 
@@ -125,10 +123,8 @@ void MezullaOwnershipModule::handleClaim(const meshtastic_MeshPacket &mp)
     memcpy(devicestate.mezulla_owner_id, ownerId, toCopy);
     devicestate.mezulla_owner_id[toCopy] = '\0';
 
-    config.power.wait_bluetooth_secs = default_wait_bluetooth_secs;
     nodeDB->saveToDisk(SEGMENT_DEVICESTATE);
-    LOG_INFO("[MEZULLA] claim: accepted, owner=%s, BLE timeout restored to %ds",
-             devicestate.mezulla_owner_id, default_wait_bluetooth_secs);
+    LOG_INFO("[MEZULLA] claim: accepted, owner=%s", devicestate.mezulla_owner_id);
     lastReplyStatus = MEZULLA_STATUS_OK;
 }
 
