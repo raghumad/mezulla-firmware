@@ -2,6 +2,7 @@
 #include "MeshService.h"
 #include "NodeDB.h"
 #include "configuration.h"
+#include "graphics/Screen.h"
 #include <cstring>
 
 #if defined(ARCH_ESP32)
@@ -62,6 +63,9 @@ void MezullaOwnershipModule::clearOwnership()
     nodeDB->saveToDisk(SEGMENT_DEVICESTATE);
     generatePairingToken();
     LOG_INFO("[MEZULLA] reset: ownership cleared");
+
+    if (screen)
+        screen->setFrames();
 }
 
 ProcessMessage MezullaOwnershipModule::handleReceived(const meshtastic_MeshPacket &mp)
@@ -126,6 +130,9 @@ void MezullaOwnershipModule::handleClaim(const meshtastic_MeshPacket &mp)
     nodeDB->saveToDisk(SEGMENT_DEVICESTATE);
     LOG_INFO("[MEZULLA] claim: accepted, owner=%s", devicestate.mezulla_owner_id);
     lastReplyStatus = MEZULLA_STATUS_OK;
+
+    if (screen)
+        screen->setFrames();
 }
 
 void MezullaOwnershipModule::handleRelease(const meshtastic_MeshPacket &mp)
