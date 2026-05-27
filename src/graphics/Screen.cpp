@@ -916,7 +916,10 @@ int32_t Screen::runOnce()
 #endif
 
 #ifndef DISABLE_WELCOME_UNSET
-    if (!NotificationRenderer::isOverlayBannerShowing() && config.lora.region == meshtastic_Config_LoRaConfig_RegionCode_UNSET) {
+    // Skip the welcome/region picker when Mezulla is unclaimed — the board
+    // has no user button to dismiss it, and the QR pairing screen takes priority.
+    if (!NotificationRenderer::isOverlayBannerShowing() && config.lora.region == meshtastic_Config_LoRaConfig_RegionCode_UNSET &&
+        !(mezullaOwnershipModule && !mezullaOwnershipModule->isClaimed())) {
 #if defined(OLED_TINY)
         menuHandler::LoraRegionPicker();
 #else
