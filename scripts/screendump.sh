@@ -2,7 +2,7 @@
 # Mezulla screendump — captures and decodes what's on the OLED right now.
 # Like QEMU's screendump command, but over serial.
 #
-# Usage: ./screendump.sh [PORT] [--save FILE]
+# Usage: ./screendump.sh [PORT] [SAVE_PATH]
 #
 # Sends a query packet to trigger MezullaScreenDump::dumpToSerial(),
 # captures the hex output, decodes it to an image.
@@ -10,7 +10,7 @@
 set -e
 
 PORT="${1:-/dev/ttyACM0}"
-SAVE="${3:-/tmp/mezulla-screen.png}"
+SAVE="${2:-/tmp/mezulla-screen.png}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DECODER="$SCRIPT_DIR/decode-mezulla-screen.py"
 
