@@ -1,4 +1,5 @@
 #include "MezullaOwnershipModule.h"
+#include "MezullaScreenDump.h"
 #include "MeshService.h"
 #include "NodeDB.h"
 #include "configuration.h"
@@ -16,10 +17,12 @@ MezullaOwnershipModule::MezullaOwnershipModule()
 {
     if (!isClaimed()) {
         generatePairingToken();
-        // QR token is the authentication — BLE PIN on top is redundant
-        // and causes silent write drops before bonding completes.
         config.bluetooth.mode = meshtastic_Config_BluetoothConfig_PairingMode_NO_PIN;
-        LOG_INFO("[MEZULLA] ownership: unclaimed, BLE set to NO_PIN (QR token is auth)");
+        config.power.wait_bluetooth_secs = 0;
+        LOG_INFO("[MEZULLA] ownership: unclaimed, BLE set to NO_PIN, timeout disabled");
+    } else {
+        config.bluetooth.mode = meshtastic_Config_BluetoothConfig_PairingMode_FIXED_PIN;
+        LOG_INFO("[MEZULLA] ownership: claimed, owner=%s", devicestate.mezulla_owner_id);
     }
 }
 
@@ -60,9 +63,12 @@ void MezullaOwnershipModule::clearOwnership()
 {
     devicestate.mezulla_owner_id[0] = '\0';
     devicestate.mezulla_pairing_token[0] = '\0';
+    config.bluetooth.mode = meshtastic_Config_BluetoothConfig_PairingMode_NO_PIN;
+    config.power.wait_bluetooth_secs = 0;
     nodeDB->saveToDisk(SEGMENT_DEVICESTATE);
+    nodeDB->saveToDisk(SEGMENT_CONFIG);
     generatePairingToken();
-    LOG_INFO("[MEZULLA] reset: ownership cleared");
+    LOG_INFO("[MEZULLA] reset: ownership cleared, BLE set to NO_PIN");
 
     if (screen)
         screen->setFrames();
@@ -70,10 +76,14 @@ void MezullaOwnershipModule::clearOwnership()
 
 ProcessMessage MezullaOwnershipModule::handleReceived(const meshtastic_MeshPacket &mp)
 {
+    LOG_INFO("[MEZULLA] handleReceived: payloadSize=%d from=0x%x to=0x%x portnum=%d",
+             mp.decoded.payload.size, mp.from, mp.to, mp.decoded.portnum);
+
     if (mp.decoded.payload.size < 1)
         return ProcessMessage::CONTINUE;
 
     uint8_t cmd = mp.decoded.payload.bytes[0];
+    LOG_INFO("[MEZULLA] command=0x%02x", cmd);
 
     switch (cmd) {
     case MEZULLA_CMD_CLAIM:
@@ -127,12 +137,16 @@ void MezullaOwnershipModule::handleClaim(const meshtastic_MeshPacket &mp)
     memcpy(devicestate.mezulla_owner_id, ownerId, toCopy);
     devicestate.mezulla_owner_id[toCopy] = '\0';
 
-    nodeDB->saveToDisk(SEGMENT_DEVICESTATE);
-    LOG_INFO("[MEZULLA] claim: accepted, owner=%s", devicestate.mezulla_owner_id);
+    config.bluetooth.mode = meshtastic_Config_BluetoothConfig_PairingMode_FIXED_PIN;
+    bool saved = nodeDB->saveToDisk(SEGMENT_DEVICESTATE);
+    nodeDB->saveToDisk(SEGMENT_CONFIG);
+    LOG_INFO("[MEZULLA] claim: accepted, owner=%s, saved=%s", devicestate.mezulla_owner_id, saved ? "YES" : "NO");
     lastReplyStatus = MEZULLA_STATUS_OK;
 
-    if (screen)
+    if (screen) {
         screen->setFrames();
+        MezullaScreenDump::dumpToSerial();
+    }
 }
 
 void MezullaOwnershipModule::handleRelease(const meshtastic_MeshPacket &mp)

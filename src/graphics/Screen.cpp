@@ -1164,6 +1164,8 @@ void Screen::setFrames(FrameFocus focus)
         LOG_INFO("[MEZULLA] QR-only mode (unclaimed)");
         framesetInfo.frameCount = 1;
         return;
+    } else if (mezullaOwnershipModule) {
+        LOG_INFO("[MEZULLA] Normal mode (claimed, owner=%s)", mezullaOwnershipModule->getOwnerId());
     }
 
 #if defined(DISPLAY_CLOCK_FRAME)

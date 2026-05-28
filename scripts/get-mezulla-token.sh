@@ -15,7 +15,7 @@ if [ -z "$TOKEN" ]; then
     exit 1
 fi
 
-NODE=$(meshtastic --port "$PORT" --info 2>/dev/null | grep -oP '"!\K[a-f0-9]+' | head -1)
+NODE=$(meshtastic --port "$PORT" --info 2>/dev/null | grep -o '"myNodeNum": [0-9]*' | grep -o '[0-9]*' | python3 -c "import sys; print(f'{int(sys.stdin.read().strip()):08x}')")
 
 if [ -z "$NODE" ]; then
     echo "ERROR: could not read node ID" >&2

@@ -51,7 +51,13 @@ if [ -z "$TOKEN" ]; then
     exit 1
 fi
 
-NODE="4a312aaa"
+# Read OUR node ID from myNodeNum (not from the mesh node list which includes other devices)
+NODE=$(meshtastic --port "$PORT" --info 2>/dev/null | grep -o '"myNodeNum": [0-9]*' | grep -o '[0-9]*' | python3 -c "import sys; print(f'{int(sys.stdin.read().strip()):08x}')")
+if [ -z "$NODE" ]; then
+    echo "ERROR: Could not read node ID"
+    exit 1
+fi
+echo "Node ID: $NODE"
 URL="tern://p?n=${NODE}&t=${TOKEN}"
 echo "$URL" > "$DEEPLINK_FILE"
 
