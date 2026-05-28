@@ -15,13 +15,17 @@ MezullaOwnershipModule *mezullaOwnershipModule;
 MezullaOwnershipModule::MezullaOwnershipModule()
     : SinglePortModule("mezulla", meshtastic_PortNum_PRIVATE_APP)
 {
+    // BLE stays NO_PIN forever — the QR token is the authentication.
+    // Switching to FIXED_PIN after claim invalidates Android bonds and
+    // triggers an infinite re-pair loop on every reconnect. The default
+    // FIXED_PIN (123456) wasn't real security anyway.
+    config.bluetooth.mode = meshtastic_Config_BluetoothConfig_PairingMode_NO_PIN;
+    config.power.wait_bluetooth_secs = 0;
+
     if (!isClaimed()) {
         generatePairingToken();
-        config.bluetooth.mode = meshtastic_Config_BluetoothConfig_PairingMode_NO_PIN;
-        config.power.wait_bluetooth_secs = 0;
-        LOG_INFO("[MEZULLA] ownership: unclaimed, BLE set to NO_PIN, timeout disabled");
+        LOG_INFO("[MEZULLA] ownership: unclaimed, NO_PIN, timeout disabled");
     } else {
-        config.bluetooth.mode = meshtastic_Config_BluetoothConfig_PairingMode_FIXED_PIN;
         LOG_INFO("[MEZULLA] ownership: claimed, owner=%s", devicestate.mezulla_owner_id);
     }
 
@@ -142,9 +146,8 @@ void MezullaOwnershipModule::handleClaim(const meshtastic_MeshPacket &mp)
     memcpy(devicestate.mezulla_owner_id, ownerId, toCopy);
     devicestate.mezulla_owner_id[toCopy] = '\0';
 
-    config.bluetooth.mode = meshtastic_Config_BluetoothConfig_PairingMode_FIXED_PIN;
+    // Stay in NO_PIN after claim — see constructor comment for why.
     bool saved = nodeDB->saveToDisk(SEGMENT_DEVICESTATE);
-    nodeDB->saveToDisk(SEGMENT_CONFIG);
     LOG_INFO("[MEZULLA] claim: accepted, owner=%s, saved=%s", devicestate.mezulla_owner_id, saved ? "YES" : "NO");
     lastReplyStatus = MEZULLA_STATUS_OK;
 
