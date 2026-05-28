@@ -24,6 +24,11 @@ MezullaOwnershipModule::MezullaOwnershipModule()
         config.bluetooth.mode = meshtastic_Config_BluetoothConfig_PairingMode_FIXED_PIN;
         LOG_INFO("[MEZULLA] ownership: claimed, owner=%s", devicestate.mezulla_owner_id);
     }
+
+#ifdef MEZULLA_TEST_BUILD
+    config.lora.region = meshtastic_Config_LoRaConfig_RegionCode_UNSET;
+    LOG_INFO("[MEZULLA] TEST BUILD — radio disabled (region forced to UNSET)");
+#endif
 }
 
 bool MezullaOwnershipModule::isClaimed() const
