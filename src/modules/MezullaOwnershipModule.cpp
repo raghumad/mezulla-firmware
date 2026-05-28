@@ -172,6 +172,8 @@ void MezullaOwnershipModule::handleRelease(const meshtastic_MeshPacket &mp)
 
 void MezullaOwnershipModule::handleQuery(const meshtastic_MeshPacket &mp)
 {
+    LOG_INFO("[MEZULLA] query: isClaimed=%s", isClaimed() ? "true" : "false");
+    MezullaScreenDump::dumpToSerial();
     lastReplyStatus = MEZULLA_STATUS_OK;
 }
 

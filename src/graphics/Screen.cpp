@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "Screen.h"
 #include "modules/MezullaOwnershipModule.h"
+#include "modules/MezullaScreenDump.h"
 #include "modules/MezullaQrScreen.h"
 #include "NodeDB.h"
 #include "PowerMon.h"
@@ -1166,6 +1167,7 @@ void Screen::setFrames(FrameFocus focus)
         return;
     } else if (mezullaOwnershipModule) {
         LOG_INFO("[MEZULLA] Normal mode (claimed, owner=%s)", mezullaOwnershipModule->getOwnerId());
+        MezullaScreenDump::dumpToSerial();
     }
 
 #if defined(DISPLAY_CLOCK_FRAME)
