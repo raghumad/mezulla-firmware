@@ -4,8 +4,16 @@
 #
 # Usage: ./screendump.sh [PORT] [SAVE_PATH]
 #
-# Sends a query packet to trigger MezullaScreenDump::dumpToSerial(),
-# captures the hex output, decodes it to an image.
+# Design goals:
+#   - Asynchronous to mezulla's normal operation — sends one short query
+#     packet to trigger the dump, never blocks the firmware
+#   - Single serial-port owner (no fighting between reader thread and
+#     SerialInterface)
+#   - Captures the dump that fires in response to the query
+#
+# Implementation: open the serial port ONCE. Send raw Meshtastic-framed
+# ToRadio bytes for a PRIVATE_APP query (cmd=0x02). Read the resulting
+# serial output (LOG_INFO MEZULLA-SCREEN p00..p73 chunks). Decode.
 
 set -e
 
@@ -14,85 +22,85 @@ SAVE="${2:-/tmp/mezulla-screen.png}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DECODER="$SCRIPT_DIR/decode-mezulla-screen.py"
 
-python3 << PYEOF
-import serial, time, threading, sys, re
-import importlib.util
+python3 <<PYEOF
+import serial, time, struct, importlib.util, sys, re, subprocess
 
-PORT = '$PORT'
-SAVE = '$SAVE'
-DECODER = '$DECODER'
+PORT = "$PORT"
+SAVE = "$SAVE"
+DECODER = "$DECODER"
 
-# Load decoder
-spec = importlib.util.spec_from_file_location('decoder', DECODER)
-decoder = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(decoder)
-
-# Start serial reader in background
-serial_data = []
-stop = False
-
-def reader():
-    global stop
-    ser = serial.Serial(PORT, 115200, timeout=1)
-    while not stop:
-        c = ser.read(4096)
-        if c:
-            serial_data.append(c.decode('utf-8', errors='replace'))
-    ser.close()
-
-t = threading.Thread(target=reader, daemon=True)
-t.start()
-time.sleep(1)
-
-# Send query packet via meshtastic lib
-try:
-    import meshtastic.serial_interface
-    iface = meshtastic.serial_interface.SerialInterface(PORT, noClose=True)
-    # Send PRIVATE_APP query (cmd=0x02) to self
-    my_num = iface.myInfo.my_node_num
-    iface.sendData(bytes([0x02]), portNum=256, wantAck=False,
-                   wantResponse=True, destinationId=my_num)
-    print(f"Query sent to node 0x{my_num:08x}", file=sys.stderr)
-    iface.close()
-except Exception as e:
-    print(f"Could not send query: {e}", file=sys.stderr)
-    print("Falling back to reboot...", file=sys.stderr)
-    import subprocess
-    stop = True
-    t.join(timeout=2)
-    subprocess.run(['meshtastic', '--port', PORT, '--reboot'],
-                   capture_output=True, timeout=15)
-    time.sleep(3)
-    stop = False
-    t = threading.Thread(target=reader, daemon=True)
-    t.start()
-
-# Wait for screen dump to appear
-time.sleep(5)
-stop = True
-t.join(timeout=3)
-
-text = ''.join(serial_data)
-url = decoder.decode_screen_dump(text)
-
-buf = decoder.parse_screen_pages(text)
-if buf:
-    img = decoder.ssd1306_to_image(buf)
-    img.save(SAVE)
-    print(f"Image: {SAVE}", file=sys.stderr)
-
-    if url:
-        print(f"QR: {url}", file=sys.stderr)
-    else:
-        # Count set pixels to describe content
-        clean = re.sub(r'\x1b\[[0-9;]*m', '', text)
-        for line in clean.split('\n'):
-            if 'MEZULLA-SCREEN' in line and 'dump:' in line:
-                print(line.strip(), file=sys.stderr)
-                break
-
-    print(SAVE)
-else:
-    print("ERROR: No screen dump captured", file=sys.stderr)
+# Get our own node number first via meshtastic --info (closes port cleanly).
+info = subprocess.run(["meshtastic", "--port", PORT, "--info"],
+                      capture_output=True, text=True, timeout=15)
+m = re.search(r'"myNodeNum":\s*(\d+)', info.stdout)
+if not m:
+    print("[screendump] could not read myNodeNum", file=sys.stderr)
     sys.exit(1)
+my_num = int(m.group(1))
+
+# Build the raw ToRadio bytes for a PRIVATE_APP query (cmd=0x02) to self.
+# Protobuf encoding by hand:
+#   Data: portnum=1(varint=256), payload=2(bytes=[0x02]), want_response=3(bool=1)
+#   MeshPacket: to=2(fixed32), decoded=4(message), id=6(fixed32), want_ack=10(bool)
+#   ToRadio: packet=1(message)
+def varint(n):
+    out = b""
+    while n > 0x7f:
+        out += bytes([(n & 0x7f) | 0x80])
+        n >>= 7
+    return out + bytes([n & 0x7f])
+
+# Data
+data = b""
+data += bytes([0x08]) + varint(256)        # portnum = 256
+data += bytes([0x12, 0x01, 0x02])          # payload = [0x02]
+data += bytes([0x18, 0x01])                # want_response = true
+
+# MeshPacket
+mp = b""
+mp += bytes([0x15]) + struct.pack("<I", my_num)  # to = fixed32 my_num
+mp += bytes([0x22, len(data)]) + data            # decoded = Data
+import time as _t
+pkt_id = int(_t.time() * 1000) & 0xFFFFFFFF
+mp += bytes([0x35]) + struct.pack("<I", pkt_id)  # id = fixed32
+
+# ToRadio
+to_radio = bytes([0x0a, len(mp)]) + mp           # packet = MeshPacket
+
+# Meshtastic serial framing: 0x94 0xC3 [length:2 BE] [payload]
+frame = bytes([0x94, 0xc3]) + struct.pack(">H", len(to_radio)) + to_radio
+
+# Open the port ONCE. Send the frame. Then read response.
+ser = serial.Serial(PORT, 115200, timeout=1)
+# Drain anything already buffered
+ser.reset_input_buffer()
+ser.write(frame)
+ser.flush()
+
+# Read for up to 5 seconds OR until we see the last expected dump chunk.
+data_bytes = b""
+deadline = time.time() + 5
+while time.time() < deadline:
+    c = ser.read(4096)
+    if c:
+        data_bytes += c
+        if b"MEZULLA-SCREEN] p73:" in data_bytes:
+            break
+ser.close()
+
+text = data_bytes.decode("utf-8", errors="replace")
+
+spec = importlib.util.spec_from_file_location("decoder", DECODER)
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+buf = mod.parse_screen_pages(text)
+if buf is None:
+    chunk_count = len(re.findall(rb"MEZULLA-SCREEN\] p\d\d:", data_bytes))
+    print(f"[screendump] only saw {chunk_count}/32 dump chunks", file=sys.stderr)
+    sys.exit(1)
+
+img = mod.ssd1306_to_image(buf)
+img.save(SAVE)
+print(f"[screendump] {SAVE}")
 PYEOF
