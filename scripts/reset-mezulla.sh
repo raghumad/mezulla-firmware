@@ -1,5 +1,6 @@
 #!/bin/bash
-# Full reset of a Mezulla board: erase flash, flash firmware, set identity, capture token.
+# Full reset of a Mezulla board: erase flash, flash firmware, set identity,
+# decode deep link from the QR code on the OLED screen dump.
 # Usage: ./reset-mezulla.sh [PORT] [OWNER_NAME] [SHORT_NAME]
 
 set -e
@@ -9,6 +10,7 @@ OWNER="${2:-Mezulla 007}"
 SHORT="${3:-007}"
 FIRMWARE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DEEPLINK_FILE="$HOME/src/Tern/docs/handoffs/mezulla-deeplink.txt"
+DECODER="$FIRMWARE_DIR/scripts/decode-mezulla-screen.py"
 
 echo "=== Mezulla Reset ==="
 echo "Port: $PORT"
@@ -28,41 +30,42 @@ sleep 15
 echo "4. Setting device identity..."
 meshtastic --port "$PORT" --set-owner "$OWNER" --set-owner-short "$SHORT" 2>&1 | tail -1
 
-echo "5. Rebooting and capturing token..."
+echo "5. Rebooting and decoding QR from OLED..."
 (meshtastic --port "$PORT" --reboot 2>&1 &)
 sleep 13
 
-TOKEN=$(python3 -c "
-import serial, time, re
+URL=$(python3 -c "
+import serial, time, re, sys, importlib.util
+
 ser = serial.Serial('$PORT', 115200, timeout=1)
 data = b''
-end = time.time() + 15
+end = time.time() + 20
 while time.time() < end:
     c = ser.read(4096)
     if c: data += c
 ser.close()
 text = data.decode('utf-8', errors='replace')
-m = re.search(r'token=([a-f0-9]{6,})', text)
-if m: print(m.group(1)[:8])
+
+spec = importlib.util.spec_from_file_location('decoder', '$DECODER')
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+url = mod.decode_screen_dump(text)
+if url:
+    print(url)
+else:
+    print('DECODE_FAILED', file=sys.stderr)
 ")
 
-if [ -z "$TOKEN" ]; then
-    echo "ERROR: Could not capture token"
+if [ -z "$URL" ] || [ "$URL" = "DECODE_FAILED" ]; then
+    echo "ERROR: Could not decode QR from OLED screen dump"
     exit 1
 fi
 
-# Read OUR node ID from myNodeNum (not from the mesh node list which includes other devices)
-NODE=$(meshtastic --port "$PORT" --info 2>/dev/null | grep -o '"myNodeNum": [0-9]*' | grep -o '[0-9]*' | python3 -c "import sys; print(f'{int(sys.stdin.read().strip()):08x}')")
-if [ -z "$NODE" ]; then
-    echo "ERROR: Could not read node ID"
-    exit 1
-fi
-echo "Node ID: $NODE"
-URL="tern://p?n=${NODE}&t=${TOKEN}"
 echo "$URL" > "$DEEPLINK_FILE"
 
 echo ""
 echo "=== Done ==="
-echo "Deep link: $URL"
+echo "Deep link (from QR): $URL"
 echo "Written to: $DEEPLINK_FILE"
 echo "Board is unclaimed, showing QR, ready for pairing test."

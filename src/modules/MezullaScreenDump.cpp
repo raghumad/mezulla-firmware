@@ -45,13 +45,15 @@ void MezullaScreenDump::dumpToSerial()
     LOG_INFO("[MEZULLA-SCREEN] dump: %d/%d pixels set (%.1f%%)",
              setPixels, 128 * 64, setPixels * 100.0 / (128 * 64));
 
-    // Dump as hex, 128 bytes per line (one page)
+    // Dump as hex in 32-byte chunks (printBuf is only 160 chars)
     for (int page = 0; page < 8; page++) {
-        char hex[128 * 2 + 1];
-        for (int col = 0; col < 128; col++) {
-            snprintf(hex + col * 2, 3, "%02x", buf[page * 128 + col]);
+        for (int q = 0; q < 4; q++) {
+            char hex[32 * 2 + 1];
+            int base = page * 128 + q * 32;
+            for (int i = 0; i < 32; i++)
+                snprintf(hex + i * 2, 3, "%02x", buf[base + i]);
+            LOG_INFO("[MEZULLA-SCREEN] p%d%d:%s", page, q, hex);
         }
-        LOG_INFO("[MEZULLA-SCREEN] page%d: %s", page, hex);
     }
 }
 

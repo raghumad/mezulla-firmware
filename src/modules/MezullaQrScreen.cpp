@@ -1,5 +1,6 @@
 #include "MezullaQrScreen.h"
 #include "MezullaOwnershipModule.h"
+#include "MezullaScreenDump.h"
 #include "NodeDB.h"
 #include "configuration.h"
 #include "qrcodegen.h"
@@ -16,6 +17,7 @@
 static uint8_t qrcode[qrcodegen_BUFFER_LEN_FOR_VERSION(QR_VERSION_MAX)];
 static uint8_t tempBuf[qrcodegen_BUFFER_LEN_FOR_VERSION(QR_VERSION_MAX)];
 static bool qrGenerated = false;
+static bool qrDumped = false;
 static int qrSize = 0;
 static char lastToken[33] = {};
 
@@ -48,7 +50,9 @@ static void ensureQrGenerated()
     qrSize = qrcodegen_getSize(qrcode);
     strncpy(lastToken, token, sizeof(lastToken) - 1);
     qrGenerated = true;
+    qrDumped = false;
 
+    LOG_INFO("[MEZULLA] qr: url=%s", url);
     LOG_INFO("[MEZULLA] qr: displayed, token=%s size=%d", token, qrSize);
 }
 
@@ -83,5 +87,10 @@ void MezullaQrScreen::drawPairingQrFrame(OLEDDisplay *display, OLEDDisplayUiStat
                     QR_MODULE_PX, QR_MODULE_PX);
             }
         }
+    }
+
+    if (!qrDumped) {
+        qrDumped = true;
+        MezullaScreenDump::dumpToSerial();
     }
 }
