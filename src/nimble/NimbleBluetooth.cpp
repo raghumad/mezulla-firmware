@@ -803,10 +803,15 @@ void NimbleBluetooth::setup()
         // - secure connection: true (enables secure connection for encryption)
         pSecurity->setAuthenticationMode(true, true, true);
     } else {
-        // No IO capability for no PIN mode
+        // MEZULLA: don't offer bonding at all (bond=false). Mezulla
+        // intentionally uses no BLE encryption — characteristics are
+        // unencrypted, the QR token is the auth boundary, and we don't
+        // want Android to raise a system pair dialog. With bond=true
+        // (upstream default), Android initiates SMP anyway, the dialog
+        // appears, and the user has to dismiss it. See
+        // docs/architecture/mezulla-security.md for the full rationale.
         pSecurity->setCapability(ESP_IO_CAP_NONE);
-        // No PIN mode: no MITM protection
-        pSecurity->setAuthenticationMode(true, false, false);
+        pSecurity->setAuthenticationMode(false, false, false);
     }
     // Set the security callbacks
     BLEDevice::setSecurityCallbacks(new NimbleBluetoothSecurityCallback());

@@ -15,14 +15,36 @@ MezullaOwnershipModule *mezullaOwnershipModule;
 MezullaOwnershipModule::MezullaOwnershipModule()
     : SinglePortModule("mezulla", meshtastic_PortNum_PRIVATE_APP)
 {
+    // Mezulla deliberately uses NO_PIN BLE mode forever (no mode switch
+    // on claim). Per BLE Core Spec Vol 3 Part H + AOSP source:
+    //   - NO_PIN keeps characteristics flagged WITHOUT _ENC/_AUTHEN, so
+    //     Android does not need to bond / does not need to run SMP.
+    //   - The only spec-supported silent pair path for non-privileged
+    //     Android apps is Passkey Entry (variant 0), and modern Android
+    //     apps default to IO_CAP_NoInputNoOutput which forces the
+    //     negotiation to Just Works (variant 3) regardless of what the
+    //     peripheral advertises. variant=3 needs setPairingConfirmation,
+    //     which requires the system-only BLUETOOTH_PRIVILEGED permission.
+    //
+    // Trade-off (documented in the Tern repo at
+    // docs/architecture/mezulla-security.md and surfaced to the pilot
+    // in Tern's pair-priming screen):
+    //   - BLE link is UNENCRYPTED. Position/SOS broadcasts visible to a
+    //     BLE sniffer within ~10 m. Same data is already on LoRa, so
+    //     marginal exposure is small.
+    //   - Authentication is the QR token (8-hex random, per-boot), not
+    //     a BLE bond. Token is verified in handleClaim; afterwards the
+    //     owner_id check gates every command. Attacker can connect but
+    //     cannot make the board do anything.
+    config.bluetooth.mode = meshtastic_Config_BluetoothConfig_PairingMode_NO_PIN;
+    config.power.wait_bluetooth_secs = 0;
+
     if (!isClaimed()) {
         generatePairingToken();
-        config.bluetooth.mode = meshtastic_Config_BluetoothConfig_PairingMode_NO_PIN;
-        config.power.wait_bluetooth_secs = 0;
-        LOG_INFO("[MEZULLA] ownership: unclaimed, BLE set to NO_PIN, timeout disabled");
+        LOG_INFO("[MEZULLA] ownership: unclaimed, NO_PIN, no BLE encryption, QR-token auth");
     } else {
-        config.bluetooth.mode = meshtastic_Config_BluetoothConfig_PairingMode_FIXED_PIN;
-        LOG_INFO("[MEZULLA] ownership: claimed, owner=%s", devicestate.mezulla_owner_id);
+        LOG_INFO("[MEZULLA] ownership: claimed, owner=%s, NO_PIN, no BLE encryption",
+                 devicestate.mezulla_owner_id);
     }
 
 #ifdef MEZULLA_TEST_BUILD
@@ -142,9 +164,12 @@ void MezullaOwnershipModule::handleClaim(const meshtastic_MeshPacket &mp)
     memcpy(devicestate.mezulla_owner_id, ownerId, toCopy);
     devicestate.mezulla_owner_id[toCopy] = '\0';
 
-    config.bluetooth.mode = meshtastic_Config_BluetoothConfig_PairingMode_FIXED_PIN;
+    // Stay in NO_PIN after claim (no BLE mode switch). The QR token's
+    // job is done at this point — owner_id is persisted and from here
+    // on every command is gated on owner_id matching. BLE link remains
+    // unencrypted by design; see MezullaOwnershipModule constructor
+    // KDoc for the trade-off rationale.
     bool saved = nodeDB->saveToDisk(SEGMENT_DEVICESTATE);
-    nodeDB->saveToDisk(SEGMENT_CONFIG);
     LOG_INFO("[MEZULLA] claim: accepted, owner=%s, saved=%s", devicestate.mezulla_owner_id, saved ? "YES" : "NO");
     lastReplyStatus = MEZULLA_STATUS_OK;
 

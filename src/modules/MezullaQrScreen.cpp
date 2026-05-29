@@ -4,6 +4,7 @@
 #include "NodeDB.h"
 #include "configuration.h"
 #include "qrcodegen.h"
+#include "esp_mac.h"
 #include <cstdio>
 #include <cstring>
 
@@ -69,7 +70,14 @@ void MezullaQrScreen::drawPairingQrFrame(OLEDDisplay *display, OLEDDisplayUiStat
     display->setColor(BLACK);
     display->fillRect(0, 0, 128, 64);
 
-    int16_t originX = (128 - totalPx) / 2;
+    // Layout: QR left-justified, identity text on the right.
+    // The pilot can cross-reference these three identifiers as Android's
+    // "Pair and connect" dialog appears:
+    //   - Long name  (e.g. "Mezulla 007") — what Android shows
+    //   - MAC                              — verifies which physical board
+    // This means the pair dialog is never a surprise — pilot pre-saw the
+    // identity right here on the OLED.
+    int16_t originX = 1;
     int16_t originY = (64 - totalPx) / 2;
 
     // White background for QR + quiet zone
@@ -88,6 +96,33 @@ void MezullaQrScreen::drawPairingQrFrame(OLEDDisplay *display, OLEDDisplayUiStat
             }
         }
     }
+
+    // Identity text on the right column. QR + quiet zone takes ~62px on
+    // the left; the right column has ~64px to work with.
+    const int16_t textX = originX + totalPx + 2;
+    display->setColor(WHITE);
+    display->setFont(ArialMT_Plain_10);
+    display->setTextAlignment(TEXT_ALIGN_LEFT);
+
+    // Long name (e.g. "Mezulla 007") — matches what Android pair dialog shows
+    display->drawString(textX, 0, owner.long_name);
+
+    // MAC of the BT radio (efuse base + 2). Split across two lines because
+    // 17 chars at ArialMT_Plain_10 doesn't fit in 64px.
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_BT);
+    char macLine1[10];
+    char macLine2[12];
+    snprintf(macLine1, sizeof(macLine1), "%02X:%02X:%02X",
+             mac[0], mac[1], mac[2]);
+    snprintf(macLine2, sizeof(macLine2), ":%02X:%02X:%02X",
+             mac[3], mac[4], mac[5]);
+    display->drawString(textX, 16, "MAC:");
+    display->drawString(textX, 28, macLine1);
+    display->drawString(textX, 40, macLine2);
+
+    // Footer hint
+    display->drawString(textX, 52, "Scan w/cam");
 
     if (!qrDumped) {
         qrDumped = true;
