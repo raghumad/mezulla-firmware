@@ -461,8 +461,15 @@ NodeDB::NodeDB()
     myNodeInfo.min_app_version = 30200; // format is Mmmss (where M is 1+the numeric major number. i.e. 30200 means 2.2.00
     pickNewNodeNum();
 
-    // Set our board type so we can share it with others
-    owner.hw_model = HW_VENDOR;
+    // Advertise a Mezulla node *type* over the mesh, not the stock board model.
+    // Every Mezulla board (Heltec/LilyGo today, custom hardware later) reports
+    // PRIVATE_HW, so the Tern app can admit only Mezulla nodes to the buddy
+    // roster and never a public-mesh node — a type filter that's robust
+    // regardless of channel/replay. We deliberately override only the
+    // *advertised* owner.hw_model; HW_VENDOR (the compile-time macro) still
+    // drives real hardware behavior (GPS pin config, etc.), so the board runs
+    // correctly on its actual silicon.
+    owner.hw_model = meshtastic_HardwareModel_PRIVATE_HW;
     // Ensure user (nodeinfo) role is set to whatever we're configured to
     owner.role = config.device.role;
     // Ensure macaddr is set to our macaddr as it will be copied in our info below
