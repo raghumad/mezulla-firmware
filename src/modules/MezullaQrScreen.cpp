@@ -8,12 +8,16 @@
 #include <cstdio>
 #include <cstring>
 
-// QR Version 2: 25×25 modules. At 2px/module with 3-module quiet zone:
-// (25 + 6) × 2 = 62×62 pixels. Fits 128×64 SSD1306.
+// QR Version 3: 29×29 modules — needed since the pairing URL now also carries
+// the board's BLE MAC (&m=) so the phone connects to THIS board, not whichever
+// Meshtastic board answers first. At 2px/module with a 2-module quiet zone:
+// (29 + 4) × 2 = 66px; centered on the 64px-tall SSD1306 the modules (58px)
+// sit fully on-screen with ~3px of quiet zone top/bottom — scannable.
+// (Version 2 only holds ~32 bytes; n+t+m is ~45.)
 #define QR_VERSION_MIN 2
-#define QR_VERSION_MAX 2
+#define QR_VERSION_MAX 3
 #define QR_MODULE_PX 2
-#define QR_QUIET_ZONE 3
+#define QR_QUIET_ZONE 2
 
 static uint8_t qrcode[qrcodegen_BUFFER_LEN_FOR_VERSION(QR_VERSION_MAX)];
 static uint8_t tempBuf[qrcodegen_BUFFER_LEN_FOR_VERSION(QR_VERSION_MAX)];
@@ -34,10 +38,18 @@ static void ensureQrGenerated()
     if (qrGenerated && strcmp(lastToken, token) == 0)
         return;
 
-    char url[80];
-    snprintf(url, sizeof(url), "tern://p?n=%s&t=%s",
-             owner.id + 1,
-             token);
+    // Embed the board's BLE MAC (ESP_MAC_BT == the address Android sees while
+    // scanning — same value shown on the right column below). The phone uses it
+    // to connect to THIS exact board instead of the first Meshtastic board it
+    // finds, which is what let pairing latch onto the wrong board. Keep n= so
+    // the claim can be addressed to this node (avoids a LoRa broadcast) and so
+    // the phone can cross-check the claim reply's `from`.
+    uint8_t qrMac[6] = {0};
+    esp_read_mac(qrMac, ESP_MAC_BT);
+    char url[96];
+    snprintf(url, sizeof(url), "tern://p?n=%s&t=%s&m=%02x%02x%02x%02x%02x%02x",
+             owner.id + 1, token,
+             qrMac[0], qrMac[1], qrMac[2], qrMac[3], qrMac[4], qrMac[5]);
 
     bool ok = qrcodegen_encodeText(url, tempBuf, qrcode,
         qrcodegen_Ecc_LOW, QR_VERSION_MIN, QR_VERSION_MAX,

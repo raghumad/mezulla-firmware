@@ -115,16 +115,40 @@ ProcessMessage MezullaOwnershipModule::handleReceived(const meshtastic_MeshPacke
     switch (cmd) {
     case MEZULLA_CMD_CLAIM:
         handleClaim(mp);
-        return ProcessMessage::STOP;
+        break;
     case MEZULLA_CMD_QUERY:
         handleQuery(mp);
-        return ProcessMessage::STOP;
+        break;
     case MEZULLA_CMD_RELEASE:
         handleRelease(mp);
-        return ProcessMessage::STOP;
+        break;
     default:
         return ProcessMessage::CONTINUE;
     }
+
+    // Every handled command sets lastReplyStatus; deliver that ack to the
+    // phone over BLE on all paths (accept AND reject), so the pairing client
+    // gets a deterministic acknowledgement instead of a silent timeout.
+    sendReplyToPhone(mp);
+    return ProcessMessage::STOP;
+}
+
+void MezullaOwnershipModule::sendReplyToPhone(const meshtastic_MeshPacket &req)
+{
+    meshtastic_MeshPacket *reply = allocReply();
+    if (!reply) {
+        LOG_WARN("[MEZULLA] reply: alloc failed, phone will not be acked");
+        return;
+    }
+    // allocReply()/allocForSending() already set from = our node num and
+    // portnum = PRIVATE_APP; the phone verifies `from` == the board it
+    // scanned, so we must not leave it 0. Address the reply back to the
+    // requester and correlate it with the request id.
+    reply->to = getFrom(&req);
+    reply->decoded.request_id = req.id;
+    LOG_INFO("[MEZULLA] reply -> phone: status=0x%02x from=0x%x to=0x%x",
+             reply->decoded.payload.bytes[0], reply->from, reply->to);
+    service->sendToPhone(reply);
 }
 
 void MezullaOwnershipModule::handleClaim(const meshtastic_MeshPacket &mp)
@@ -175,7 +199,6 @@ void MezullaOwnershipModule::handleClaim(const meshtastic_MeshPacket &mp)
 
     if (screen) {
         screen->setFrames();
-        MezullaScreenDump::dumpToSerial();
     }
 }
 
@@ -203,7 +226,6 @@ void MezullaOwnershipModule::handleRelease(const meshtastic_MeshPacket &mp)
 void MezullaOwnershipModule::handleQuery(const meshtastic_MeshPacket &mp)
 {
     LOG_INFO("[MEZULLA] query: isClaimed=%s", isClaimed() ? "true" : "false");
-    MezullaScreenDump::dumpToSerial();
     lastReplyStatus = MEZULLA_STATUS_OK;
 }
 

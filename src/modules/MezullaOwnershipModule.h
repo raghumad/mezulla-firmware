@@ -38,6 +38,13 @@ class MezullaOwnershipModule : public SinglePortModule
     void handleQuery(const meshtastic_MeshPacket &mp);
     void handleRelease(const meshtastic_MeshPacket &mp);
 
+    // Deliver the command ack straight into the phone's BLE FIFO
+    // (MeshService::toPhoneQueue). The generic want_response path routes
+    // module replies via sendToMesh(ccToPhone=false) — i.e. out over LoRa,
+    // never to the connected phone — so a BLE pairing client would write a
+    // claim and never hear back. We push the reply to the phone explicitly.
+    void sendReplyToPhone(const meshtastic_MeshPacket &req);
+
     MezullaStatus lastReplyStatus = MEZULLA_STATUS_OK;
 };
 

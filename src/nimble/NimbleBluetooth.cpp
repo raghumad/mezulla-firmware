@@ -698,6 +698,20 @@ class NimbleBluetoothServerCallback : public BLEServerCallbacks
 
         const uint16_t connHandle = desc->conn_handle;
 
+        // Register the connection handle here, on CONNECT. Upstream only sets
+        // it in the authentication-complete (ENC_CHANGE) callback — but Mezulla
+        // pairs in NO_PIN mode with NO encryption, so ENC_CHANGE never fires and
+        // the handle would stay NONE for the whole session. That makes
+        // checkIsConnected() return false, so the first fromNum change after
+        // config download (e.g. our claim ack being queued) trips
+        // checkConnectionTimeout()->close(), tearing the phone session down to
+        // STATE_SEND_NOTHING before any live packet can be served. Config
+        // (reads/writes) still works because it doesn't consult the handle, so
+        // the bug looks like "ack queued but never delivered". Setting it on
+        // connect is correct for both modes (the encrypted path just re-sets the
+        // same value on ENC_CHANGE).
+        nimbleBluetoothConnHandle = connHandle;
+
         // With Google Pixel 8 Android devices, this causes ESP32 device crash
         // when phone reconnects. Disable this to make progress on the
         // Arduino v3 migration while we investigate the Android compatibility
